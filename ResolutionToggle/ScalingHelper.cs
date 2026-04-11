@@ -1,3 +1,4 @@
+using System.Security;
 using Microsoft.Win32;
 
 namespace ResolutionToggle;
@@ -18,38 +19,63 @@ internal static class ScalingHelper
     /// Sets the desktop DPI scaling percentage (100 = 96 DPI, 125 = 120 DPI, etc.).
     /// The change is persisted to the registry; Windows applies it after the next sign-in.
     /// Pass 0 or 100 to revert to the system default (recommended) scaling.
+    /// Returns null on success, or an error message on failure.
     /// </summary>
-    public static void SetScalingPercent(int percent)
+    public static string? SetScalingPercent(int percent)
     {
-        int logPixels = (int)Math.Round(percent / 100.0 * 96);
+        try
+        {
+            int logPixels = (int)Math.Round(percent / 100.0 * 96);
 
-        if (percent <= 100)
-        {
-            Registry.SetValue(RegistryPath, Win8DpiScalingKey, 0, RegistryValueKind.DWord);
-            Registry.SetValue(RegistryPath, LogPixelsKey, 96, RegistryValueKind.DWord);
+            if (percent <= 100)
+            {
+                Registry.SetValue(RegistryPath, Win8DpiScalingKey, 0, RegistryValueKind.DWord);
+                Registry.SetValue(RegistryPath, LogPixelsKey, 96, RegistryValueKind.DWord);
+            }
+            else
+            {
+                Registry.SetValue(RegistryPath, Win8DpiScalingKey, 1, RegistryValueKind.DWord);
+                Registry.SetValue(RegistryPath, LogPixelsKey, logPixels, RegistryValueKind.DWord);
+            }
+
+            return null;
         }
-        else
+        catch (UnauthorizedAccessException)
         {
-            Registry.SetValue(RegistryPath, Win8DpiScalingKey, 1, RegistryValueKind.DWord);
-            Registry.SetValue(RegistryPath, LogPixelsKey, logPixels, RegistryValueKind.DWord);
+            return "Access denied writing scaling to the registry. Try running as administrator.";
+        }
+        catch (SecurityException)
+        {
+            return "Security policy prevented writing scaling to the registry.";
+        }
+        catch (Exception ex)
+        {
+            return $"Failed to write scaling to the registry: {ex.Message}";
         }
     }
 
     /// <summary>
     /// Reads the currently persisted DPI scaling from the registry.
-    /// Returns 100 when the default / recommended scaling is active.
+    /// Returns 100 when the default / recommended scaling is active or if the registry cannot be read.
     /// </summary>
     public static int GetPersistedScalingPercent()
     {
-        object? value = Registry.GetValue(RegistryPath, LogPixelsKey, 96);
-        int logPixels = value is int lp ? lp : 96;
+        try
+        {
+            object? value = Registry.GetValue(RegistryPath, LogPixelsKey, 96);
+            int logPixels = value is int lp ? lp : 96;
 
-        object? win8Flag = Registry.GetValue(RegistryPath, Win8DpiScalingKey, 0);
-        int flag = win8Flag is int f ? f : 0;
+            object? win8Flag = Registry.GetValue(RegistryPath, Win8DpiScalingKey, 0);
+            int flag = win8Flag is int f ? f : 0;
 
-        if (flag == 0)
+            if (flag == 0)
+                return 100;
+
+            return (int)Math.Round(logPixels / 96.0 * 100);
+        }
+        catch
+        {
             return 100;
-
-        return (int)Math.Round(logPixels / 96.0 * 100);
+        }
     }
 }
