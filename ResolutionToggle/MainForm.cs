@@ -120,19 +120,33 @@ internal sealed class MainForm : Form
         try
         {
             var current = _display.GetCurrentMode();
+            if (current is null)
+            {
+                _lblCurrent.Text = "Current resolution:  unable to detect";
+                _lblScaling.Text = "Current scaling:  N/A";
+                _lblRecommended.Text = "Recommended:  N/A";
+                _btnToggle.Enabled = false;
+                _lblStatus.Text = "Could not read display settings from the driver.";
+                return;
+            }
+
             _lblCurrent.Text = $"Current resolution:  {current.Width} x {current.Height}  @  {current.Frequency} Hz";
 
             int scaling = _display.GetCurrentScalingPercent();
             _lblScaling.Text = $"Current scaling:  {scaling}%";
 
             var recommended = _display.GetRecommendedMode();
-            _lblRecommended.Text = $"Recommended:  {recommended.Width} x {recommended.Height}  @  {recommended.Frequency} Hz";
+            if (recommended is not null)
+                _lblRecommended.Text = $"Recommended:  {recommended.Width} x {recommended.Height}  @  {recommended.Frequency} Hz";
+            else
+                _lblRecommended.Text = "Recommended:  unable to detect";
 
+            _btnToggle.Enabled = recommended is not null;
             UpdateToggleButton(current, scaling);
         }
         catch (Exception ex)
         {
-            _lblStatus.Text = $"Error: {ex.Message}";
+            _lblStatus.Text = $"Error refreshing display info: {ex.Message}";
         }
     }
 
@@ -145,7 +159,10 @@ internal sealed class MainForm : Form
         if (isAtTarget)
         {
             var rec = _display.GetRecommendedMode();
-            _btnToggle.Text = $"Switch to Recommended  ({rec.Width}x{rec.Height} + auto scaling)";
+            if (rec is not null)
+                _btnToggle.Text = $"Switch to Recommended  ({rec.Width}x{rec.Height} + auto scaling)";
+            else
+                _btnToggle.Text = "No recommended mode available";
             _btnToggle.BackColor = Color.FromArgb(16, 124, 65);
         }
         else
@@ -157,28 +174,52 @@ internal sealed class MainForm : Form
 
     private void BtnToggle_Click(object? sender, EventArgs e)
     {
+        _btnToggle.Enabled = false;
+        _btnRefresh.Enabled = false;
+
         try
         {
             var current = _display.GetCurrentMode();
+            if (current is null)
+            {
+                _lblStatus.Text = "Cannot read current display mode.";
+                return;
+            }
+
             int scaling = _display.GetCurrentScalingPercent();
 
             bool isAtTarget = current.Width == TargetWidth
                            && current.Height == TargetHeight
                            && scaling == TargetScaling;
 
-            string result;
             if (isAtTarget)
             {
                 var rec = _display.GetRecommendedMode();
-                result = _display.SetResolution(rec.Width, rec.Height);
-                ScalingHelper.SetScalingPercent(0);
-                _lblStatus.Text = result + " Scaling reset to recommended (sign out to apply scaling).";
+                if (rec is null)
+                {
+                    _lblStatus.Text = "No recommended mode available to switch to.";
+                    return;
+                }
+
+                var result = _display.SetResolution(rec.Width, rec.Height);
+                string? scalingErr = ScalingHelper.SetScalingPercent(0);
+
+                _lblStatus.Text = result.Message;
+                if (scalingErr is not null)
+                    _lblStatus.Text += $" Scaling warning: {scalingErr}";
+                else if (result.Success)
+                    _lblStatus.Text += " Scaling reset to recommended (sign out to apply scaling).";
             }
             else
             {
-                result = _display.SetResolution(TargetWidth, TargetHeight);
-                ScalingHelper.SetScalingPercent(TargetScaling);
-                _lblStatus.Text = result + $" Scaling set to {TargetScaling}%.";
+                var result = _display.SetResolution(TargetWidth, TargetHeight);
+                string? scalingErr = ScalingHelper.SetScalingPercent(TargetScaling);
+
+                _lblStatus.Text = result.Message;
+                if (scalingErr is not null)
+                    _lblStatus.Text += $" Scaling warning: {scalingErr}";
+                else if (result.Success)
+                    _lblStatus.Text += $" Scaling set to {TargetScaling}%.";
             }
 
             RefreshInfo();
@@ -186,6 +227,11 @@ internal sealed class MainForm : Form
         catch (Exception ex)
         {
             _lblStatus.Text = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _btnToggle.Enabled = true;
+            _btnRefresh.Enabled = true;
         }
     }
 }
