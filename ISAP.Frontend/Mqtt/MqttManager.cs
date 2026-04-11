@@ -19,7 +19,7 @@ namespace ISAP.Frontend.Pages_Production
         private readonly object _lock = new object();
 
         private IMqttClient _mqttClient;
-        private MqttClientOptions _clientOptions;
+        private IMqttClientOptions _clientOptions;
         private System.Timers.Timer _heartbeatTimer;
         private volatile bool _initialized;
         private volatile bool _disposed;
